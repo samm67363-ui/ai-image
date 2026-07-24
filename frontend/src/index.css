@@ -437,7 +437,85 @@ body {
     grid-template-columns: 80px 1fr 40px;
     font-size: 0.8rem;
   }
+/* ==========================================================
+   TECH THEME ADDITIONS — paste at the END of src/index.css
+   (these override/extend the existing rules)
+   ========================================================== */
 
+/* Circuit-grid background instead of flat gradient */
+body.theme-dark {
+  background-image:
+    linear-gradient(rgba(168, 85, 247, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(99, 102, 241, 0.08) 1px, transparent 1px),
+    var(--bg-gradient);
+  background-size: 40px 40px, 40px 40px, cover;
+}
+
+body.theme-light {
+  background-image:
+    linear-gradient(rgba(99, 102, 241, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px),
+    var(--bg-gradient);
+  background-size: 40px 40px, 40px 40px, cover;
+}
+
+/* Small monospace "badge" above the title, e.g. ◉ NEURAL SCAN ENGINE */
+.hero-badge {
+  display: inline-block;
+  font-family: "Courier New", monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.15em;
+  color: #a855f7;
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  background: rgba(168, 85, 247, 0.08);
+  padding: 6px 16px;
+  border-radius: 999px;
+  margin-bottom: 18px;
+}
+
+/* Glowing neon edge on the upload dropzone + preview card */
+.upload-dropzone,
+.preview-container,
+.result-card {
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.15),
+    0 0 24px rgba(99, 102, 241, 0.15),
+    var(--card-shadow);
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.dragging {
+  box-shadow:
+    0 0 0 1px rgba(168, 85, 247, 0.5),
+    0 0 32px rgba(168, 85, 247, 0.35);
+}
+
+/* Scanline animation across the loader — reinforces the "scanning" feel */
+.loader-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.loader-container::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #a855f7, transparent);
+  animation: scanline 1.6s linear infinite;
+}
+
+@keyframes scanline {
+  0% { top: 0%; }
+  100% { top: 100%; }
+}
+
+/* Monospace touch on result class name, like a system readout */
+.result-class {
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.02em;
+}
   .history-grid {
     grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
   }
