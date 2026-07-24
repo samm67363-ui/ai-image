@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: image-classifier-backend
+    runtime: python
+    plan: free
+    # PyTorch is memory-hungry. If the service crashes or fails to boot on
+    # the free tier, switch this to "starter" (or higher) in the Render
+    # dashboard for more RAM.
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALLOWED_ORIGINS
+        value: http://localhost:5173
+        # After your Vercel frontend is deployed, update this value in the
+        # Render dashboard (Environment tab) to your real Vercel URL, e.g.
+        # https://image-classifier.vercel.app
