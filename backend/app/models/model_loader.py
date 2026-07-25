@@ -1,15 +1,19 @@
 """
 model_loader.py
 
-Loads the fine-tuned brain-tumor ResNet18 model exactly once and keeps
-it in memory. FastAPI imports get_model() / get_class_names() /
-get_device() from here instead of reloading anything per request.
+Loads BOTH models once at startup and keeps them in memory:
+  1. A general-purpose ResNet18 pretrained on ImageNet (1000 everyday
+     object categories) -- used for ordinary photos.
+  2. A fine-tuned ResNet18 for brain tumor MRI classification (glioma /
+     meningioma / pituitary / notumor) -- used when the upload looks
+     like a grayscale medical scan.
 
-The weights file (brain_tumor_resnet18.pth) is ~45MB, too big for a
-normal GitHub file upload (25MB limit), so it's hosted as a GitHub
-Release asset instead and downloaded automatically the first time the
-server starts. class_names.json is tiny and lives directly in the repo
-alongside this file.
+predict.py picks which one to use per-request based on a simple
+image heuristic (see routes/predict.py).
+
+The tumor weights file (~45MB) is too big for a normal GitHub file
+upload (25MB limit), so it's hosted as a GitHub Release asset and
+downloaded automatically the first time the server starts.
 """
 
 import json
@@ -18,45 +22,48 @@ import os
 import requests
 import torch
 import torch.nn as nn
-from torchvision.models import resnet18
+from torchvision.models import resnet18, ResNet18_Weights
 
 _MODELS_DIR = os.path.dirname(os.path.abspath(__file__))
-_WEIGHTS_PATH = os.path.join(_MODELS_DIR, "brain_tumor_resnet18.pth")
-_CLASS_NAMES_PATH = os.path.join(_MODELS_DIR, "class_names.json")
+_TUMOR_WEIGHTS_PATH = os.path.join(_MODELS_DIR, "brain_tumor_resnet18.pth")
+_TUMOR_CLASS_NAMES_PATH = os.path.join(_MODELS_DIR, "class_names.json")
 
-# Direct download link to the .pth file attached to a GitHub Release.
-# Update this if you publish a new release with updated weights.
-_WEIGHTS_URL = (
+_TUMOR_WEIGHTS_URL = (
     "https://github.com/samm67363-ui/ai-image/releases/download/"
     "model-v1/brain_tumor_resnet18.pth"
 )
 
+_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-def _download_weights_if_missing():
-    """
-    Downloads the model weights from the GitHub Release into
-    _WEIGHTS_PATH if they aren't already there. Runs once per server
-    boot -- on Render's free tier the disk is ephemeral, so this
-    re-downloads after the service restarts or redeploys, but not on
-    every request.
-    """
-    if os.path.exists(_WEIGHTS_PATH):
+
+def _download_tumor_weights_if_missing():
+    if os.path.exists(_TUMOR_WEIGHTS_PATH):
         return
-
-    print(f"Downloading model weights from {_WEIGHTS_URL} ...")
-    response = requests.get(_WEIGHTS_URL, stream=True, timeout=120)
+    print(f"Downloading model weights from {_TUMOR_WEIGHTS_URL} ...")
+    response = requests.get(_TUMOR_WEIGHTS_URL, stream=True, timeout=120)
     response.raise_for_status()
-
-    with open(_WEIGHTS_PATH, "wb") as f:
+    with open(_TUMOR_WEIGHTS_PATH, "wb") as f:
         for chunk in response.iter_content(chunk_size=8192):
             f.write(chunk)
-
     print("Model weights downloaded successfully.")
 
 
-_download_weights_if_missing()
+# ---------------------------------------------------------------
+# General-purpose model (everyday photos, 1000 ImageNet classes)
+# ---------------------------------------------------------------
+_general_weights = ResNet18_Weights.DEFAULT
+_general_model = resnet18(weights=_general_weights)
+_general_model.eval()
+_general_model.to(_device)
+_general_class_names = _general_weights.meta["categories"]
 
-if not os.path.exists(_CLASS_NAMES_PATH):
+
+# ---------------------------------------------------------------
+# Fine-tuned brain-tumor model (4 classes)
+# ---------------------------------------------------------------
+_download_tumor_weights_if_missing()
+
+if not os.path.exists(_TUMOR_CLASS_NAMES_PATH):
     raise FileNotFoundError(
         "Missing class_names.json in backend/app/models/. "
         "This is produced alongside the .pth file by the Kaggle "
@@ -64,31 +71,31 @@ if not os.path.exists(_CLASS_NAMES_PATH):
         "under GitHub's normal upload limit)."
     )
 
-with open(_CLASS_NAMES_PATH) as f:
-    _class_names = json.load(f)
+with open(_TUMOR_CLASS_NAMES_PATH) as f:
+    _tumor_class_names = json.load(f)
 
-# Use GPU if available, otherwise fall back to CPU.
-_device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Rebuild the same architecture used during training: a ResNet18 with
-# its final layer swapped from 1000 ImageNet classes to our tumor classes.
-_model = resnet18(weights=None)
-_model.fc = nn.Linear(_model.fc.in_features, len(_class_names))
-_model.load_state_dict(torch.load(_WEIGHTS_PATH, map_location=_device))
-_model.eval()
-_model.to(_device)
+_tumor_model = resnet18(weights=None)
+_tumor_model.fc = nn.Linear(_tumor_model.fc.in_features, len(_tumor_class_names))
+_tumor_model.load_state_dict(torch.load(_TUMOR_WEIGHTS_PATH, map_location=_device))
+_tumor_model.eval()
+_tumor_model.to(_device)
 
 
-def get_model():
-    """Return the singleton fine-tuned model, already in eval mode."""
-    return _model
+def get_general_model():
+    return _general_model
 
 
-def get_class_names():
-    """Return the list of class names, in model output order."""
-    return _class_names
+def get_general_class_names():
+    return _general_class_names
+
+
+def get_tumor_model():
+    return _tumor_model
+
+
+def get_tumor_class_names():
+    return _tumor_class_names
 
 
 def get_device():
-    """Return the torch device the model is loaded on (cpu or cuda)."""
     return _device
