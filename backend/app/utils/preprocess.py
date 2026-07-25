@@ -65,17 +65,46 @@ def validate_upload(content_type: str, file_bytes: bytes) -> None:
 
 def preprocess_image(file_bytes: bytes) -> torch.Tensor:
     """
-    Converts raw image bytes into a batched tensor ready for the model:
-    resize -> tensor -> normalize -> add batch dimension.
+    Converts raw image bytes into a batched tensor ready for either
+    model: resize -> tensor -> normalize -> add batch dimension.
+    Both models were trained with the same input size/normalization,
+    so one preprocessing function covers both.
     """
-    # Re-open the image (verify() above consumes the file pointer,
-    # so we open it fresh here rather than reusing the same buffer).
     image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
 
     tensor = _transform(image)  # shape: [3, 224, 224]
-
-    # Add a batch dimension -> [1, 3, 224, 224], since the model
-    # always expects a batch, even if it's a batch of one image.
-    batched_tensor = tensor.unsqueeze(0)
+    batched_tensor = tensor.unsqueeze(0)  # -> [1, 3, 224, 224]
 
     return batched_tensor
+
+
+def looks_like_mri(file_bytes: bytes) -> bool:
+    """
+    Heuristic to decide whether an upload is likely a grayscale medical
+    scan (MRI) rather than an ordinary color photo. MRI images are
+    exported as grayscale -- even when saved in RGB/JPEG format, each
+    pixel's R, G, and B values are nearly identical. Ordinary photos
+    almost always have real color variation between channels.
+
+    This is a heuristic, not a certainty -- a black-and-white photo
+    would also trigger it. That's an acceptable tradeoff here since
+    the app's two categories (medical scans vs. everyday photos) are
+    usually visually distinct in color content.
+    """
+    image = Image.open(io.BytesIO(file_bytes)).convert("RGB")
+
+    # Downsample for speed -- we only need a rough color estimate,
+    # not pixel-perfect accuracy.
+    small = image.resize((64, 64))
+    pixels = list(small.getdata())
+
+    total_channel_spread = 0
+    for r, g, b in pixels:
+        total_channel_spread += (max(r, g, b) - min(r, g, b))
+
+    avg_channel_spread = total_channel_spread / len(pixels)
+
+    # Real color photos typically average well above this; grayscale
+    # scans average close to 0.
+    GRAYSCALE_THRESHOLD = 8
+    return avg_channel_spread < GRAYSCALE_THRESHOLD
